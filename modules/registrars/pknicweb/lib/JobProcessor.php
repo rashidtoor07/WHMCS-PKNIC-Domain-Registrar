@@ -137,8 +137,12 @@ final class JobProcessor
             $this->queue->markDone($id, $result['message']);
             $this->activity("PKNIC: job #$id {$job->action} {$job->domain} done - {$result['message']}", $payload);
             return true;
+        } catch (ManualActionRequiredException $e) {
+            $this->queue->release($id, $e->getMessage(), $e->retryMinutes);
+            $this->notifier->actionNeeded($job, $e->getMessage());
+            return true;
         } catch (AwaitingConfirmationException $e) {
-            $this->queue->release($id, $e->getMessage(), 30);
+            $this->queue->release($id, $e->getMessage(), $e->retryMinutes);
             $this->debug("PKNIC: job #$id waiting: " . $e->getMessage());
             return true;
         } catch (InsufficientBalanceException $e) {

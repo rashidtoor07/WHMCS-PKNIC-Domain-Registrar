@@ -14,6 +14,7 @@ use PknicWeb\AwaitingConfirmationException;
 use PknicWeb\Config;
 use PknicWeb\InsufficientBalanceException;
 use PknicWeb\LoginException;
+use PknicWeb\ManualActionRequiredException;
 use PknicWeb\MapException;
 use PknicWeb\MapLoader;
 use PknicWeb\NonRetryableException;
@@ -385,6 +386,46 @@ test('PKNIC-style My Domains list: expiry from the row, nameservers via the doma
     same('2028-03-07', $a->getDomainInfo('safex.com.pk')['expiry'], 'second-level .com.pk row');
     same(false, $a->getDomainInfo('notmine.pk')['found'], 'missing row => not found');
     check($a->isInAccount('aliwaleed.pk') && !$a->isInAccount('waleed.pk'), 'isInAccount on the list');
+});
+
+test('Shipped map vs PKNIC displayDomain page: expiry, nameservers, base64 URL', function () {
+    $map = MapLoader::load();
+    $config = new Config('https://pk6.pknic.net.pk', 'u', 'p', 0, '', 3, false, sys_get_temp_dir());
+    $c = new PknicClient($config, $map, panel(), fn () => null);
+    $info = (new PknicActions($c))->parseDomainInfo(file_get_contents(__DIR__ . '/fixtures/pk_displayDomain.html'), 'posly.pk');
+    same('2028-08-15', $info['expiry'], 'expiry "Aug 15, 2028" with M d, Y');
+    same(['ns1.visioningcloud.com', 'ns2.visioningcloud.com'], $info['nameservers'], 'nameservers (set id, buttons, emails ignored)');
+    same(true, $info['found'], 'found');
+    same(
+        'https://pk6.pknic.net.pk/pk5/displayDomain.PK?seq=cG9zbHkucGs%3D',
+        $c->url((string) $map['domain_info_page'], ['domain_b64' => base64_encode('posly.pk')]),
+        'same record URL as the browser (seq = base64 of the domain)'
+    );
+});
+
+test('extractHostnames ignores e-mail domains and glued numbers', function () {
+    same(['ns1.a.pk'], PknicActions::extractHostnames(["ns1.a.pk 450779 imrashid@gmail.com"]), 'email skipped');
+});
+
+test('Manual renewal: alert once, then complete when PKNIC shows a later expiry', function () {
+    $saved = null;
+    $checkpoint = function (array $p) use (&$saved) {
+        $saved = $p;
+    };
+    $t = panel([], ['42' => ['domain_42.html']]);
+    $a = new PknicActions(client($t, ['renew_page' => 'manual']));
+    $e = throws(ManualActionRequiredException::class, fn () => $a->renewDomain(['domain' => 'example.com.pk', 'regperiod' => '1'], $checkpoint), 'Renew example.com.pk');
+    same(180, $e?->retryMinutes, 'checks again in 3 hours');
+    same('2027-10-15', $saved['expiry_before'] ?? null, 'expiry recorded');
+    throws(AwaitingConfirmationException::class, fn () => $a->renewDomain($saved), 'still 2027-10-15');
+
+    $old = ['manual_since' => date('Y-m-d H:i:s', time() - 20 * 86400)] + $saved;
+    throws(NonRetryableException::class, fn () => $a->renewDomain($old), '14 days');
+
+    $t2 = panel([], ['42' => ['domain_42_renewed.html']]);
+    $r = (new PknicActions(client($t2, ['renew_page' => 'manual'])))->renewDomain($saved);
+    same('2028-10-15', $r['expiry'], 'completed with the new expiry');
+    same(0, count($t->posts()) + count($t2->posts()), 'never posts anything');
 });
 
 test('OptionChoice matching', function () {

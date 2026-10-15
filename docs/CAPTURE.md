@@ -32,8 +32,15 @@ for each action. Every value still containing `TODO` is treated as missing: the 
   - The list cuts nameservers to 20 characters, so nameservers are read from the page the domain's name links to
     (`ns_info_page => '{link}'`). Open one domain and Inspect the element listing its nameservers to get `ns_parse_selector`.
   - Map the **Search in My Domains** box (`domain_search_field`) so lookups still work once the list has more than one page.
-- Still needed from DevTools: the domain detail page in My Domains, the
-  nameserver-change page, the renewal page, and the success/error messages of each.
+- **Domain record** (`displayDomain.PK?seq=<base64 of the domain>`). The module builds this URL itself with `{domain_b64}`.
+  It reads the expiry ("Expire Date: Aug 15, 2028", format `M d, Y`) and the nameservers between the "Nameservers"
+  label and the "Need A-Record CNAME TXT?" button.
+- **Nameservers on the record are a set** (e.g. `450779`) with **Edit** and **Re-Assign**.
+  - **Edit changes the set for every domain that uses it.** Never map it.
+  - Map **Re-Assign** (`ns_update_page`, `ns_fields`), plus the set-creation page (`ns_set_add_*`) if new sets must be made.
+- **No renew form:** renewals run in manual-assist mode (`renew_page => 'manual'`).
+- Still needed from DevTools: login field names, the search box field name, the Re-Assign page (and the set "Add" page),
+  the register/confirm Form Data, and the success/error messages of each.
 
 ## 1. Record one action in Chrome DevTools
 

@@ -64,7 +64,7 @@ final class Selector
             }
             $group = isset($m[1]) ? $m[1] : $m[0];
             return array_values(array_map(
-                static fn (string $s): string => self::clean(html_entity_decode(strip_tags($s), ENT_QUOTES | ENT_HTML5, 'UTF-8')),
+                static fn (string $s): string => self::clean(html_entity_decode(strip_tags((string) preg_replace('/<[^>]*>/', ' ', $s)), ENT_QUOTES | ENT_HTML5, 'UTF-8')),
                 $group
             ));
         }

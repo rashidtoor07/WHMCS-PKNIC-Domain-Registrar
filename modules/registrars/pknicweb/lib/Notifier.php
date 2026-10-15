@@ -30,6 +30,17 @@ final class Notifier
         $this->alertAdmin($subject, $body);
     }
 
+    /** Something only a person can do in the panel (not a failure): To-Do, email and, if configured, a ticket. */
+    public function actionNeeded(object $job, string $message): void
+    {
+        $subject = sprintf('PKNIC: action needed for %s (%s, job #%d)', $job->domain, $job->action, $job->id);
+        $body = $message . "\n\nJob #{$job->id} keeps checking PKNIC and closes itself when the change shows up. "
+            . 'You can also click "Mark done" in Addons > PKNIC Jobs.';
+        $this->openTicket($subject, $body);
+        $this->addTodo($subject, $body);
+        $this->alertAdmin($subject, $body);
+    }
+
     public function alertAdmin(string $subject, string $message): void
     {
         try {

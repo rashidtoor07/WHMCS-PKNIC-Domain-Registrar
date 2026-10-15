@@ -82,9 +82,14 @@ Once *Max retries* is reached the job becomes `failed`, and a ticket, a To-Do an
   - Once the domain is listed, the module sets it *Active* with the real expiry and next due date (`UpdateClientDomain`).
   - Nameservers are picked from PKNIC's saved nameserver sets. If none matches, the module creates one
     (when `ns_set_add_*` is filled) or registers without one and queues a nameserver job.
-- **Renewal:** the job records the current expiry before submitting and only succeeds when the expiry moves forward.
-  If the result is unclear (e.g. success text shown but the expiry is unchanged), the job fails straight to a ticket instead of retrying.
-  This prevents a double renewal charge.
+- **Renewal:** the PKNIC panel has no renew form, so `renew_page` is `'manual'`.
+  - When a renewal is paid in WHMCS, the job records the current PKNIC expiry and sends you an *action needed* alert
+    (To-Do, email, and a ticket if a department is set).
+  - It then checks the domain record every 3 hours and completes by itself once PKNIC shows a later expiry,
+    updating the WHMCS expiry and next due date.
+  - After 14 days with no change it escalates. You can also click *Mark done*.
+  - If a renew form ever appears, map it and renewals become automatic: a job is only marked done once the expiry has moved forward,
+    so it can't renew twice.
 - **Nameservers:** saved locally first, so the client area shows the new values straight away.
   - A newer change supersedes older pending ones.
   - A change made while the registration is still pending is merged into the registration.

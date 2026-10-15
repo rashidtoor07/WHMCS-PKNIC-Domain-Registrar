@@ -7,6 +7,7 @@
  * Paths are relative to the "PKNIC Panel Base URL" module setting (absolute URLs also work).
  * For PKNIC set that setting to: https://pk6.pknic.net.pk
  * Placeholders usable in page paths: {domain} (example.com.pk), {sld} (example), {tld} (com.pk),
+ * {domain_b64} (base64 of the domain, as in displayDomain.PK?seq=...),
  * {id} (panel's internal domain id, looked up via domain_list_page + domain_id_regex).
  *
  * Selectors accept:
@@ -44,18 +45,20 @@ return [
     'domain_id_regex'             => '',            // not needed: pages are reached via the domain's link ({link})
 
     // ---------------------------------------------------------------- reading a domain back
-    // 'list' = read the domain's row in My Domains (searched). {domain} in a selector is replaced by the domain.
-    'domain_info_page'      => 'list',
-    'domain_not_found_text' => [],                  // a missing row already means "not found"
-    'expiry_parse_selector' => '//tr[.//a[normalize-space(.)="{domain}"]]'
-        . '/td[count((//*[self::td or self::th][normalize-space(.)="Expiry"])[1]/preceding-sibling::*) + 1]',
-    'date_format'           => 'Y-m-d',             // e.g. 2028-03-11
-    'status_parse_selector' => '',                  // no status column: active/expired is derived from the expiry date
+    // Domain record page, e.g. displayDomain.PK?seq=cG9zbHkucGs= (seq = base64 of "posly.pk").
+    // Presence in the account is still decided by My Domains above (account-scoped).
+    'domain_info_page'      => '/pk5/displayDomain.PK?seq={domain_b64}',
+    'domain_not_found_text' => [],                  // TODO (optional): text this page shows for an unknown domain
+    // "Expire Date:  Aug 15, 2028"
+    'expiry_parse_selector' => '//*[normalize-space(.)="Expire Date:"]/following-sibling::*[1]',
+    'date_format'           => 'M d, Y',
+    'status_parse_selector' => '',                  // no status shown: active/expired is derived from the expiry date
     'status_active_text'    => ['Active'],
     'status_expired_text'   => ['Expired'],
-    // Full nameservers: the domain's detail page (href of its link in My Domains).
-    'ns_info_page'          => '{link}',
-    'ns_parse_selector'     => 'TODO',              // TODO: element(s) with the nameservers on the domain detail page
+    // Everything between the "Nameservers" label and the "Need A-Record CNAME TXT?" button. Hostnames are
+    // extracted from it; the set id (e.g. 450779) and the Edit / Re-Assign buttons are ignored.
+    'ns_info_page'          => '',                  // same page
+    'ns_parse_selector'     => 'regex:#>\s*Nameservers\s*<(.*?)(?:Need A-Record|</table>)#is',
 
     // ---------------------------------------------------------------- register
     // "Domain Application for .pk" form (menu: Register Domain). Labels below are from that page;
@@ -107,31 +110,32 @@ return [
     'register_confirm_hours'         => 72,       // how long to wait for the domain to appear in My Domains before escalating
 
     // ---------------------------------------------------------------- renew
-    'renew_page'                  => '/TODO?domain={domain}', // TODO: fill from DevTools
-    'renew_form_selector'         => 'form',      // TODO
-    'renew_fields'                => [
-        'regperiod' => 'TODO_field',              // TODO: years field (remove the line if there is none)
-    ],
+    // The PKNIC panel has no renew form. 'manual' = the job records the current expiry, alerts the admin
+    // (To-Do, email, ticket if configured), then checks every renew_manual_check_minutes and completes by
+    // itself once PKNIC shows a later expiry date. After renew_manual_days without change it escalates.
+    'renew_page'                 => 'manual',
+    'renew_manual_check_minutes' => 180,
+    'renew_manual_days'          => 14,
+    // Used only if renew_page is ever a real form:
+    'renew_form_selector'         => 'form',
+    'renew_fields'                => [],
     'renew_static_fields'         => [],
     'renew_confirm_form_selector' => '',
     'renew_confirm_static_fields' => [],
-    'renew_success_text'          => ['TODO'],    // TODO
+    'renew_success_text'          => [],
     'renew_error_text'            => [],
-    'renew_verify_expiry'         => true,        // require the expiry date to move forward before marking done
+    'renew_verify_expiry'         => true,
 
     // ---------------------------------------------------------------- nameservers
-    'ns_update_page'                  => '/TODO?domain={domain}', // TODO: fill from DevTools
+    // On the domain record page the nameservers are a SET (e.g. 450779) with "Edit" and "Re-Assign".
+    // NEVER map "Edit": it changes the set itself, i.e. every domain that shares it.
+    // Use "Re-Assign", which points only this domain at another set (created first via ns_set_add_* if needed).
+    'ns_update_page'                  => '/pk5/TODO?seq={domain_b64}', // TODO: URL behind the nameserver "Re-Assign" button
     'ns_update_form_selector'         => 'form',  // TODO
-    // If this page also uses a nameserver-set dropdown, use instead:
-    //   'ns_fields' => ['nameservers' => ['field' => 'TODO_field', 'select' => 'nameservers']],
     'ns_fields'                       => [
-        'ns1' => 'TODO',
-        'ns2' => 'TODO',
-        'ns3' => 'TODO',
-        'ns4' => 'TODO',
-        // 'ns5' => 'TODO',
+        'nameservers' => ['field' => 'TODO_field', 'select' => 'nameservers'], // TODO: name="" of the set dropdown
     ],
-    'ns_update_static_fields'         => [],
+    'ns_update_static_fields'         => [],      // TODO: the Re-Assign submit button from Form Data
     'ns_update_confirm_form_selector' => '',
     'ns_update_confirm_static_fields' => [],
     'ns_update_success_text'          => ['TODO'],

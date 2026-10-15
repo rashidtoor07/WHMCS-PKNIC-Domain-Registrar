@@ -132,6 +132,9 @@ final class PknicActions
     public function renewDomain(array $payload, ?callable $checkpoint = null): array
     {
         $domain = strtolower((string) $payload['domain']);
+        if ($this->client->map('renew_page') === 'manual') {
+            return $this->watchManualRenewal($payload, $checkpoint);
+        }
         $this->client->requireMap('renew_page');
         $this->client->ensureLogin();
         $verify = (bool) $this->client->map('renew_verify_expiry', true);
@@ -174,6 +177,48 @@ final class PknicActions
             throw new NonRetryableException('Renewal outcome unknown (no success or error text). Check the PKNIC panel manually.');
         }
         return ['expiry' => null, 'message' => "Renewed $domain (\"$success\"); expiry not verified"];
+    }
+
+    /**
+     * The panel has no renew form: ask a person to renew, then complete once the expiry date moves.
+     * @return array{expiry: ?string, message: string}
+     */
+    private function watchManualRenewal(array $payload, ?callable $checkpoint): array
+    {
+        $domain = strtolower((string) $payload['domain']);
+        $this->client->ensureLogin();
+        $info = $this->getDomainInfo($domain);
+        if (!$info['found'] || $info['expiry'] === null) {
+            throw new PknicException("Could not read the current expiry of $domain from PKNIC");
+        }
+
+        if (empty($payload['expiry_before'])) {
+            $payload['expiry_before'] = $info['expiry'];
+            $payload['manual_since'] = date('Y-m-d H:i:s');
+            if ($checkpoint !== null) {
+                $checkpoint($payload);
+            }
+            throw new ManualActionRequiredException(
+                "Renew $domain for {$payload['regperiod']} year(s) in the PKNIC panel (current expiry {$info['expiry']}). "
+                . 'This job completes by itself once PKNIC shows a later expiry date.',
+                (int) $this->client->map('renew_manual_check_minutes', 180)
+            );
+        }
+
+        if ($info['expiry'] > $payload['expiry_before']) {
+            return ['expiry' => $info['expiry'], 'message' => "Renewal detected: expiry {$payload['expiry_before']} -> {$info['expiry']}"];
+        }
+        $days = (int) $this->client->map('renew_manual_days', 14);
+        $since = (string) ($payload['manual_since'] ?? '');
+        if ($since !== '' && time() - (int) strtotime($since) > $days * 86400) {
+            throw new NonRetryableException(
+                "$domain still expires {$info['expiry']} $days days after the manual renewal was requested. Renew it in the PKNIC panel."
+            );
+        }
+        throw new AwaitingConfirmationException(
+            "Waiting for the manual renewal of $domain in PKNIC (expiry still {$info['expiry']})",
+            (int) $this->client->map('renew_manual_check_minutes', 180)
+        );
     }
 
     // ------------------------------------------------------------------ nameservers
@@ -560,7 +605,7 @@ final class PknicActions
     private function vars(string $domain, string ...$templateKeys): array
     {
         [$sld, $tld] = array_pad(explode('.', $domain, 2), 2, '');
-        $vars = ['domain' => $domain, 'sld' => $sld, 'tld' => $tld];
+        $vars = ['domain' => $domain, 'sld' => $sld, 'tld' => $tld, 'domain_b64' => base64_encode($domain)];
         foreach ($templateKeys as $key) {
             if (str_contains((string) $this->client->map($key, ''), '{id}')) {
                 $vars['id'] = $this->findDomainId($domain);
@@ -593,7 +638,7 @@ final class PknicActions
     {
         $out = [];
         foreach ($texts as $text) {
-            preg_match_all('/(?<![a-z0-9.-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62})\.?(?![a-z0-9-])/i', $text, $m);
+            preg_match_all('/(?<![a-z0-9.@-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62})\.?(?![a-z0-9-])/i', $text, $m);
             foreach ($m[1] as $host) {
                 $out[] = strtolower($host);
             }

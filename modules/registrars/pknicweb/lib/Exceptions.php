@@ -32,6 +32,15 @@ class NonRetryableException extends PknicException
 /** The action was submitted; PKNIC has not reflected it yet. Re-check later without re-submitting. */
 class AwaitingConfirmationException extends PknicException
 {
+    public function __construct(string $message, public readonly int $retryMinutes = 30)
+    {
+        parent::__construct($message);
+    }
+}
+
+/** A person has to do this in the PKNIC panel; the job keeps watching for the result. */
+class ManualActionRequiredException extends AwaitingConfirmationException
+{
 }
 
 /** PKNIC refused because the account balance is too low. Affects every paid action, not just this job. */
