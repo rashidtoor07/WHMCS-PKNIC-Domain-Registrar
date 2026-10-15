@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html><head><title>Sign in</title></head>
+<body>
+<h1>Registrar Panel</h1>
+<form id="searchForm" action="/search.php"><input name="q"></form>
+<form id="loginForm" method="post" action="login.php">
+  <input type="hidden" name="_token" value="csrf-abc123">
+  <input type="hidden" name="return" value="/dashboard.php">
+  <label>User <input type="text" name="user_name"></label>
+  <label>Password <input type="password" name="user_pass"></label>
+  <label><input type="checkbox" name="remember" value="1" checked> Remember me</label>
+  <label><input type="checkbox" name="newsletter" value="1"> Unchecked</label>
+  <input type="text" name="disabled_field" value="x" disabled>
+  <input type="submit" name="btnLogin" value="Sign in">
+</form>
+</body></html>

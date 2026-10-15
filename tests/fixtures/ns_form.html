@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html><body>
+<a href="/logout.php">Logout</a>
+<form id="otherForm" action="/x.php" method="post"><input name="foo" value="bar"></form>
+<form id="nsForm" method="post" action="update_ns.php?id=42">
+  <input type="hidden" name="csrf" value="ns-token-999">
+  <input type="hidden" name="domain_id" value="42">
+  <input name="ns1" value="ns1.oldhost.net">
+  <input name="ns2" value="ns2.oldhost.net">
+  <input name="ns3" value="ns3.oldhost.net">
+  <input name="ns4" value="">
+  <select name="ttl"><option value="3600">1h</option><option value="86400" selected>1d</option></select>
+  <textarea name="note">keep me</textarea>
+  <button type="submit" name="save">Save</button>
+</form>
+</body></html>
