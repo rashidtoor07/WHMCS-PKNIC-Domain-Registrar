@@ -25,41 +25,99 @@ final class PknicActions
     // ------------------------------------------------------------------ register
 
     /**
+     * Submits the domain application once, then confirms it from the account's domain list.
+     * After the first POST, "submitted_at" is checkpointed so retries only re-check, never re-apply.
+     *
      * @param array $payload Queue payload (domain, sld, tld, regperiod, ns1..ns5, contact fields, additionalfields).
-     * @return array{expiry: ?string, nameservers: string[], message: string}
+     * @param callable(array): void|null $checkpoint Persists the payload.
+     * @return array{expiry: ?string, nameservers: string[], message: string, ns_pending: bool}
      */
-    public function registerDomain(array $payload): array
+    public function registerDomain(array $payload, ?callable $checkpoint = null): array
     {
         $domain = strtolower((string) $payload['domain']);
         $this->client->requireMap('register_page');
         $this->client->requireMap('register_fields');
         $this->client->ensureLogin();
 
-        // Idempotency: a retry after an ambiguous run must not register twice.
+        if (!empty($payload['submitted_at'])) {
+            if ($this->isInAccount($domain)) {
+                return $this->registered($domain, (bool) ($payload['ns_pending'] ?? false));
+            }
+            $hours = (int) $this->client->map('register_confirm_hours', 72);
+            if (time() - (int) strtotime((string) $payload['submitted_at']) > $hours * 3600) {
+                throw new NonRetryableException(
+                    "Application for $domain was submitted at {$payload['submitted_at']} but the domain is still not in "
+                    . "the account after $hours h. Check its status in the PKNIC panel."
+                );
+            }
+            throw new AwaitingConfirmationException(
+                "Application submitted at {$payload['submitted_at']}; waiting for $domain to appear in the account"
+            );
+        }
+
+        // Idempotency for anything registered outside this job (or before a crash).
         if ($this->isInAccount($domain)) {
-            $info = $this->getDomainInfo($domain);
-            return [
-                'expiry' => $info['expiry'],
-                'nameservers' => $info['nameservers'],
-                'message' => "$domain is already present in the PKNIC account",
-            ];
+            return $this->registered($domain, false, "$domain is already present in the PKNIC account");
         }
 
-        $resp = $this->submitAction('register', $domain, $this->buildFields('register_fields', $payload));
+        $data = $payload + ['nameservers' => self::payloadNameservers($payload)];
+        $fields = $this->buildFields('register_fields', $data);
+        $nsPending = false;
+        try {
+            $resp = $this->submitWithNameserverSet('register', $domain, $fields, $data['nameservers']);
+        } catch (NoMatchingOptionException $e) {
+            if ($e->choice->mode !== 'nameservers') {
+                throw new NonRetryableException($e->getMessage());
+            }
+            // No saved set with these nameservers: apply without one, set them in a follow-up job.
+            unset($fields[$e->field]);
+            $nsPending = true;
+            $resp = $this->submitAction('register', $domain, $fields);
+        }
+        foreach ($fields as $value) {
+            if ($value instanceof OptionChoice && $value->mode === 'nameservers' && $value->resolved === null) {
+                $nsPending = true;
+            }
+        }
+
+        $payload['submitted_at'] = date('Y-m-d H:i:s');
+        $payload['ns_pending'] = $nsPending;
+        if ($checkpoint !== null) {
+            $checkpoint($payload);
+        }
+
         $success = $this->successText($resp, 'register');
-
-        if (!$this->isInAccount($domain)) {
-            throw new PknicException($success !== null
-                ? "PKNIC showed \"$success\" but $domain is not visible in the account yet; will re-check"
-                : "Registration not confirmed: no success text and $domain not found in the account");
+        if ($this->isInAccount($domain)) {
+            return $this->registered($domain, $nsPending);
         }
-        $info = $this->getDomainInfo($domain);
+        if ($success === null) {
+            throw new NonRetryableException(
+                "Domain application for $domain was posted but PKNIC showed neither success nor error text, and the "
+                . 'domain is not in the account. Check the panel; if there is no application, cancel this job and register again.'
+            );
+        }
+        throw new AwaitingConfirmationException("PKNIC accepted the application (\"$success\"); waiting for $domain to appear in the account");
+    }
 
+    private function registered(string $domain, bool $nsPending, ?string $message = null): array
+    {
+        $info = $this->getDomainInfo($domain);
         return [
             'expiry' => $info['expiry'],
             'nameservers' => $info['nameservers'],
-            'message' => "Registered $domain" . ($info['expiry'] ? ", expires {$info['expiry']}" : ' (expiry date not readable)'),
+            'ns_pending' => $nsPending,
+            'message' => $message ?? ("Registered $domain" . ($info['expiry'] ? ", expires {$info['expiry']}" : ' (expiry date not readable)')),
         ];
+    }
+
+    /** @return string[] */
+    private static function payloadNameservers(array $payload): array
+    {
+        $list = [];
+        foreach ([1, 2, 3, 4, 5] as $i) {
+            $list[] = (string) ($payload['ns' . $i] ?? '');
+        }
+        return Validator::normalizeNameservers($list);
     }
 
     // ------------------------------------------------------------------ renew
@@ -122,16 +180,20 @@ final class PknicActions
     {
         $domain = strtolower($domain);
         $requested = Validator::normalizeNameservers($nameservers);
-        $fieldMap = (array) $this->client->requireMap('ns_fields');
+        $this->client->requireMap('ns_fields');
         $this->client->requireMap('ns_parse_selector');
         $this->client->ensureLogin();
 
-        $data = [];
-        $i = 0;
-        foreach (array_keys($fieldMap) as $key) {
-            $data[$key] = $requested[$i++] ?? '';
+        $data = ['domain' => $domain, 'nameservers' => $requested];
+        foreach ([1, 2, 3, 4, 5] as $i) {
+            $data['ns' . $i] = $requested[$i - 1] ?? '';
         }
-        $resp = $this->submitAction('ns_update', $domain, $this->buildFields('ns_fields', $data));
+        try {
+            $resp = $this->submitWithNameserverSet('ns_update', $domain, $this->buildFields('ns_fields', $data), $requested);
+        } catch (NoMatchingOptionException $e) {
+            throw new NonRetryableException($e->getMessage() . '. Create a nameserver set with exactly these nameservers '
+                . 'in the PKNIC panel (or fill the ns_set_add_* keys in pknic_map.php), then retry the job.');
+        }
         $success = $this->successText($resp, 'ns_update');
 
         $info = $this->getDomainInfo($domain);
@@ -256,6 +318,44 @@ final class PknicActions
 
     // ------------------------------------------------------------------ helpers
 
+    /**
+     * Submit an action whose nameservers are chosen from saved sets. If no set matches and
+     * ns_set_add_page is configured, create the set and submit again (nothing was posted yet).
+     */
+    private function submitWithNameserverSet(string $action, string $domain, array $fields, array $nameservers): Response
+    {
+        try {
+            return $this->submitAction($action, $domain, $fields);
+        } catch (NoMatchingOptionException $e) {
+            if ($e->choice->mode !== 'nameservers' || !MapLoader::has('ns_set_add_page', $this->client->mapAll())) {
+                throw $e;
+            }
+            $this->addNameserverSet($domain, $nameservers);
+            return $this->submitAction($action, $domain, $fields);
+        }
+    }
+
+    public function addNameserverSet(string $domain, array $nameservers): void
+    {
+        $nameservers = Validator::normalizeNameservers($nameservers);
+        $data = [
+            'domain' => $domain,
+            'nameservers' => $nameservers,
+            'set_name' => 'whmcs-' . substr(sha1(implode(',', $nameservers)), 0, 8),
+        ];
+        foreach ([1, 2, 3, 4, 5] as $i) {
+            $data['ns' . $i] = $nameservers[$i - 1] ?? '';
+        }
+        $resp = $this->client->submitForm(
+            (string) $this->client->requireMap('ns_set_add_page'),
+            (string) ($this->client->map('ns_set_add_form_selector') ?: 'form'),
+            $this->buildFields('ns_set_add_fields', $data),
+            $this->vars($domain),
+            'ns_set_add'
+        );
+        $this->assertNoError($resp, 'ns_set_add');
+    }
+
     private function submitAction(string $action, string $domain, array $fields): Response
     {
         $pageKey = $action . '_page';
@@ -335,6 +435,18 @@ final class PknicActions
                 }
                 if (isset($spec['transform']) && is_callable($spec['transform'])) {
                     $value = ($spec['transform'])($value, $data);
+                }
+                if (!empty($spec['select'])) {
+                    $mode = $spec['select'] === 'nameservers' ? 'nameservers' : 'equal';
+                    $wanted = (array) $value;
+                    foreach ((array) ($spec['also'] ?? []) as $extra) {
+                        $wanted[] = self::lookup($data, (string) $extra);
+                    }
+                    $wanted = array_values(array_filter(array_map('strval', array_filter($wanted, 'is_scalar')), 'strlen'));
+                    if ($wanted !== []) {
+                        $fields[$field] = new OptionChoice($wanted, $mode, (bool) ($spec['required'] ?? true));
+                    }
+                    continue;
                 }
             }
             $fields[$field] = is_array($value) ? array_map('strval', $value) : (string) ($value ?? '');

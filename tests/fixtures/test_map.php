@@ -31,6 +31,8 @@ return [
         'ns1' => 'ns1',
         'ns2' => 'ns2',
         'additionalfields.CNIC' => 'cnic',
+        'countryname' => ['field' => 'country', 'select' => true, 'also' => ['countrycode']],
+        'nameservers' => ['field' => 'nsset', 'select' => 'nameservers'],
     ],
     'register_static_fields' => ['agree' => '1'],
     'register_confirm_form_selector' => 'form#confirmForm',
@@ -45,6 +47,9 @@ return [
     'ns_update_form_selector' => '#nsForm',
     'ns_fields' => ['ns1' => 'ns1', 'ns2' => 'ns2', 'ns3' => 'ns3', 'ns4' => 'ns4'],
     'ns_update_success_text' => ['Nameservers updated'],
+
+    'ns_set_add_page' => '/nsset.php',
+    'ns_set_add_fields' => ['set_name' => 'setname', 'ns1' => 'h1', 'ns2' => 'h2', 'ns3' => 'h3'],
 
     'availability_page' => '/whois.php?q={domain}',
     'availability_available_text' => ['is available'],

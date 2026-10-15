@@ -182,7 +182,7 @@ final class PknicClient
      * GET $pageUrl, read the form matched by $formSelector (hidden inputs + current values),
      * overlay $fields and submit it to the form's action. Re-logs in once if the POST bounced to login.
      *
-     * @param array<string, string|string[]|null> $fields null removes a field.
+     * @param array<string, string|string[]|OptionChoice|null> $fields null removes a field.
      */
     public function submitForm(string $pageUrl, string $formSelector, array $fields, array $vars = [], string $label = 'submit'): Response
     {
@@ -206,6 +206,18 @@ final class PknicClient
         }
         $data = $form['fields'];
         foreach ($fields as $name => $value) {
+            if ($value instanceof OptionChoice) {
+                if (!isset($form['options'][$name])) {
+                    throw new MapException("Select field '$name' not found in form '$formSelector' on {$page->url}");
+                }
+                $value = $value->resolve($form['options'][$name]);
+                if ($value === null) {
+                    if ($fields[$name]->required) {
+                        throw new NoMatchingOptionException((string) $name, $fields[$name], $form['options'][$name]);
+                    }
+                    continue; // Keep the form's default selection.
+                }
+            }
             if ($value === null) {
                 unset($data[$name]);
             } else {
@@ -266,7 +278,8 @@ final class PknicClient
     // ------------------------------------------------------------------ parsing
 
     /**
-     * @return array{action: string, method: string, multipart: bool, fields: array<string, string|string[]>}|null
+     * @return array{action: string, method: string, multipart: bool, fields: array<string, string|string[]>,
+     *               options: array<string, array<string, string>>}|null
      */
     public function extractForm(string $html, string $pageUrl, string $selector): ?array
     {
@@ -294,6 +307,7 @@ final class PknicClient
 
         $action = trim($form->getAttribute('action'));
         $fields = [];
+        $options = [];
         $xpath = new \DOMXPath($doc);
         foreach ($xpath->query('.//input | .//select | .//textarea', $form) ?: [] as $el) {
             /** @var \DOMElement $el */
@@ -320,6 +334,7 @@ final class PknicClient
                 foreach ($el->getElementsByTagName('option') as $opt) {
                     $val = $opt->hasAttribute('value') ? $opt->getAttribute('value') : trim($opt->textContent);
                     $first ??= $val;
+                    $options[$name][$val] = trim((string) preg_replace('/\s+/', ' ', $opt->textContent));
                     if ($opt->hasAttribute('selected')) {
                         $selected[] = $val;
                     }
@@ -338,6 +353,7 @@ final class PknicClient
             'method' => strtoupper($form->getAttribute('method') ?: 'GET'),
             'multipart' => stripos($form->getAttribute('enctype'), 'multipart') !== false,
             'fields' => $fields,
+            'options' => $options,
         ];
     }
 

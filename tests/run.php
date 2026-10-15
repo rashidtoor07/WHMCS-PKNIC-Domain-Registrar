@@ -10,11 +10,13 @@ declare(strict_types=1);
 require __DIR__ . '/../modules/registrars/pknicweb/lib/bootstrap.php';
 require __DIR__ . '/FixtureTransport.php';
 
+use PknicWeb\AwaitingConfirmationException;
 use PknicWeb\Config;
 use PknicWeb\LoginException;
 use PknicWeb\MapException;
 use PknicWeb\MapLoader;
 use PknicWeb\NonRetryableException;
+use PknicWeb\OptionChoice;
 use PknicWeb\PknicActions;
 use PknicWeb\PknicClient;
 use PknicWeb\PknicException;
@@ -240,26 +242,73 @@ test('Error text inside <script> is ignored', function () {
     same(null, PknicClient::matchAny(PknicClient::visibleText(file_get_contents(__DIR__ . '/fixtures/domain_42.html')), ['Domain is locked']), 'script text not visible');
 });
 
-test('registerDomain: form + confirm step, then confirmed in domain list', function () {
-    $t = panel([
+function registerPanel(array $extra = []): FixtureTransport
+{
+    return panel($extra + [
         'GET /domains.php' => ['domains.html', 'domains_after_register.html'],
         'GET /register.php' => 'register_form.html',
         'POST /register.php' => fn (array $r) => str_contains($r['url'], 'step=3') ? 'register_success.html' : 'register_confirm.html',
     ]);
-    $r = (new PknicActions(client($t)))->registerDomain([
-        'domain' => 'newshop.pk', 'regperiod' => '2', 'fullname' => 'Ali Khan',
-        'ns1' => 'ns1.shophost.pk', 'ns2' => 'ns2.shophost.pk', 'additionalfields' => ['CNIC' => '12345-1234567-1'],
-    ]);
+}
+
+function shopPayload(array $extra = []): array
+{
+    return $extra + [
+        'domain' => 'newshop.pk', 'regperiod' => '2', 'fullname' => 'Ali Khan', 'countryname' => 'Pakistan', 'countrycode' => 'PK',
+        'ns1' => 'ns1.shophost.pk', 'ns2' => 'NS2.shophost.pk', 'additionalfields' => ['CNIC' => '12345-1234567-1'],
+    ];
+}
+
+test('registerDomain: form + selects + confirm step, then confirmed in domain list', function () {
+    $t = registerPanel();
+    $saved = null;
+    $r = (new PknicActions(client($t)))->registerDomain(shopPayload(['countryname' => 'United Arab Emirates', 'countrycode' => 'AE']), function (array $p) use (&$saved) {
+        $saved = $p;
+    });
     same('2027-10-16', $r['expiry'], 'expiry read after registration');
+    same(false, $r['ns_pending'], 'nameserver set matched');
+    check(!empty($saved['submitted_at']), 'submitted_at checkpointed');
     $posts = $t->posts();
     same(2, count($posts), 'form + confirm POSTs');
     $first = FixtureTransport::parseBody((string) $posts[0]['body']);
-    same('newshop.pk', $first['domain_name'] ?? null, 'domain field');
+    same('newshop.pk', $first['domain_name'] ?? null, 'domain field (textarea)');
     same('2Y', $first['years'] ?? null, 'transform applied');
     same('12345-1234567-1', $first['cnic'] ?? null, 'additionalfields lookup');
+    same('AE', $first['country'] ?? null, 'country chosen by option text');
+    same('12', $first['nsset'] ?? null, 'nameserver set chosen by its hostnames (order/case-insensitive)');
+    same('self', $first['techContact'] ?? null, 'untouched select keeps default');
     same('1', $first['agree'] ?? null, 'static field');
     same('reg-tok-1', $first['reg_token'] ?? null, 'hidden token');
     same('ORD-555', FixtureTransport::parseBody((string) $posts[1]['body'])['order_ref'] ?? null, 'confirm form hidden field');
+});
+
+test('registerDomain: no matching nameserver set and no add page => applies without one, ns_pending', function () {
+    $t = registerPanel();
+    $c = client($t, ['ns_set_add_page' => '']);
+    $r = (new PknicActions($c))->registerDomain(shopPayload(['ns1' => 'ns1.other.pk', 'ns2' => 'ns2.other.pk']));
+    same(true, $r['ns_pending'], 'ns_pending flagged');
+    same('', FixtureTransport::parseBody((string) $t->posts()[0]['body'])['nsset'] ?? null, 'nsset left at its empty default');
+});
+
+test('registerDomain: no matching set => creates it via ns_set_add_page, then selects it', function () {
+    $t = registerPanel([
+        'GET /register.php' => ['register_form.html', 'register_form_newset.html'],
+        'GET /nsset.php' => 'nsset_form.html',
+        'POST /nsset.php' => 'nsset_saved.html',
+    ]);
+    $r = (new PknicActions(client($t)))->registerDomain(shopPayload(['ns1' => 'ns1.brandnew.pk', 'ns2' => 'ns2.brandnew.pk']));
+    same(false, $r['ns_pending'], 'set found after creating it');
+    $posts = $t->posts();
+    same('https://panel.test/nsset.php', $posts[0]['url'], 'set created first');
+    $set = FixtureTransport::parseBody((string) $posts[0]['body']);
+    same(['ns1.brandnew.pk', 'ns2.brandnew.pk', ''], [$set['h1'], $set['h2'], $set['h3']], 'set hostnames');
+    same('13', FixtureTransport::parseBody((string) $posts[1]['body'])['nsset'] ?? null, 'new set selected');
+});
+
+test('registerDomain: unknown country => NonRetryable before anything is posted', function () {
+    $t = registerPanel();
+    throws(NonRetryableException::class, fn () => (new PknicActions(client($t)))->registerDomain(shopPayload(['countryname' => 'Atlantis', 'countrycode' => 'XX'])), 'country');
+    same(0, count($t->posts()), 'nothing posted');
 });
 
 test('registerDomain: already in the account => no POST (idempotent retry)', function () {
@@ -269,13 +318,33 @@ test('registerDomain: already in the account => no POST (idempotent retry)', fun
     same('2027-10-16', $r['expiry'], 'expiry read');
 });
 
-test('registerDomain: success text but not in list => retryable error', function () {
-    $t = panel([
-        'GET /register.php' => 'register_form.html',
-        'POST /register.php' => fn (array $r) => str_contains($r['url'], 'step=3') ? 'register_success.html' : 'register_confirm.html',
-    ]);
-    $e = throws(PknicException::class, fn () => (new PknicActions(client($t)))->registerDomain(['domain' => 'newshop.pk', 'regperiod' => '1']), 'not visible');
-    check(!($e instanceof NonRetryableException), 'is retryable');
+test('registerDomain: accepted but not yet listed => AwaitingConfirmation, retry never re-applies', function () {
+    $t = registerPanel(['GET /domains.php' => 'domains.html']);
+    $a = new PknicActions(client($t));
+    $saved = null;
+    $checkpoint = function (array $p) use (&$saved) {
+        $saved = $p;
+    };
+    throws(AwaitingConfirmationException::class, fn () => $a->registerDomain(shopPayload(), $checkpoint), 'waiting');
+    $postsAfterFirst = count($t->posts());
+    throws(AwaitingConfirmationException::class, fn () => $a->registerDomain($saved), 'waiting');
+    same($postsAfterFirst, count($t->posts()), 'second run only re-checks');
+
+    $old = ['submitted_at' => date('Y-m-d H:i:s', time() - 80 * 3600)] + $saved;
+    throws(NonRetryableException::class, fn () => $a->registerDomain($old), 'still not in the account');
+
+    $t2 = panel(['GET /domains.php' => 'domains_after_register.html']);
+    $r = (new PknicActions(client($t2)))->registerDomain($saved);
+    same('2027-10-16', $r['expiry'], 'confirmed once listed');
+    same(0, count($t2->posts()), 'no POST on confirmation');
+});
+
+test('OptionChoice matching', function () {
+    $opts = ['' => 'Select', '5' => 'Set A (ns1.a.pk ns2.a.pk ns3.a.pk)', '6' => 'Set B (ns1.a.pk, ns2.a.pk)'];
+    same('6', (new OptionChoice(['ns2.a.pk', 'ns1.a.pk'], 'nameservers'))->resolve($opts), 'exact set, not superset');
+    same(null, (new OptionChoice(['ns1.a.pk'], 'nameservers'))->resolve($opts), 'subset does not match');
+    same('PK', (new OptionChoice(['pk']))->resolve(['AF' => 'Afghanistan', 'PK' => 'Pakistan']), 'by value');
+    same('PK', (new OptionChoice(['Pakistan']))->resolve(['AF' => 'Afghanistan', 'PK' => 'Pakistan']), 'by text');
 });
 
 test('containsDomain does not match a longer name', function () {

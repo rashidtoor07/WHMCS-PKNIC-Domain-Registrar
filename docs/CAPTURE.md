@@ -3,6 +3,27 @@
 The module does not know any real PKNIC URL or field name. Fill them in once, from your own browser,
 for each action. Every value still containing `TODO` is treated as missing: the queue pauses and says which key is missing.
 
+## PKNIC specifics (pk6.pknic.net.pk)
+
+- Module setting **PKNIC Panel Base URL**: `https://pk6.pknic.net.pk`. `login_page` is already set to `/pk5/login.PK`.
+- **Register Domain → "Domain Application for .pk"** has these boxes (labels, in order):
+  Domain Names (textarea), Organization, Group Tag, Contact Person, Role Name, Address, City, Country (dropdown),
+  State/Province, Zip/Postal Code, Email Address, Phone Number, Technical Contact (dropdown), Billing Contact (dropdown),
+  DNS Nameserver (dropdown of saved *nameserver sets*, with an **Add** link), the "I agree…" checkbox and
+  **Submit Domain Application**. `register_fields` in `pknic_map.php` already lists them by label;
+  only the `name=""` of each one is missing.
+- **Nameservers come from saved sets**, not from free-text boxes. The module chooses the set whose dropdown text lists
+  exactly the nameservers that were ordered.
+  - If no set matches and you fill `ns_set_add_*` (the page behind **Add**), it creates the set first.
+  - Otherwise it sends the application without a set and queues a nameserver job afterwards.
+  - Capture what the dropdown options look like (Inspect the `<select>`). If an option's text shows only a name and
+    not the hostnames, tell the developer: matching then needs another approach.
+- **Country** is matched by option text (e.g. "Pakistan") or value (e.g. "PK"), whichever the panel uses.
+- It is an *application*. After submitting, the module waits (up to `register_confirm_hours`) for the domain to show in
+  **My Domains**, and **never submits the same application twice**.
+- Still needed from DevTools: the URL of the application page, the domain detail page in My Domains, the
+  nameserver-change page, the renewal page, and the success/error messages of each.
+
 ## 1. Record one action in Chrome DevTools
 
 1. Open the PKNIC panel in Chrome, **log out** first (so you can capture the login too).
@@ -34,6 +55,9 @@ for each action. Every value still containing `TODO` is treated as missing: the 
 | Nameserver form page / fields | `ns_update_page`, `ns_update_form_selector`, `ns_fields` | `['ns1' => 'txtNS1', 'ns2' => 'txtNS2', …]` |
 | Message after a successful change | `ns_update_success_text` | `['updated successfully']` |
 | Error messages you have seen | `error_text` / `*_error_text` | `['Insufficient balance']` |
+
+Dropdowns: map them with `['field' => 'name', 'select' => true]` to pick an option by its visible text or value,
+or `'select' => 'nameservers'` for nameserver sets. If nothing matches, the module stops *before* posting.
 
 Hidden inputs (CSRF tokens, `__VIEWSTATE`, ids…) do **not** need mapping. The module loads the page, copies
 every hidden input and every pre-filled value, then overlays only the fields you map.

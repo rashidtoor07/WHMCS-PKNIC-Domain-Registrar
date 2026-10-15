@@ -28,3 +28,25 @@ class MapException extends PknicException
 class NonRetryableException extends PknicException
 {
 }
+
+/** The action was submitted; PKNIC has not reflected it yet. Re-check later without re-submitting. */
+class AwaitingConfirmationException extends PknicException
+{
+}
+
+/** A <select> had no option matching the wanted value. Raised before anything is posted. */
+class NoMatchingOptionException extends PknicException
+{
+    public function __construct(
+        public readonly string $field,
+        public readonly OptionChoice $choice,
+        public readonly array $options
+    ) {
+        parent::__construct(sprintf(
+            'No option in select "%s" matches %s. Available: %s',
+            $field,
+            implode(', ', $choice->wanted),
+            implode(' | ', array_map(static fn ($v, $t) => "$t [$v]", array_keys($options), $options)) ?: '(none)'
+        ));
+    }
+}

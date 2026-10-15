@@ -82,9 +82,18 @@ final class JobProcessor
         try {
             switch ($job->action) {
                 case 'register':
-                    $result = $actions->registerDomain($payload);
+                    $result = $actions->registerDomain($payload, fn (array $p) => $this->queue->updatePayload($id, $p));
                     $result['message'] .= $this->updateWhmcsDomain($job, $result['expiry'], true);
-                    if ($result['nameservers']) {
+                    $wanted = Validator::normalizeNameservers(array_map(
+                        static fn ($i) => (string) ($payload['ns' . $i] ?? ''),
+                        [1, 2, 3, 4, 5]
+                    ));
+                    if ($result['ns_pending'] && $wanted !== []) {
+                        // Registered without a nameserver set: apply the nameservers in a follow-up job.
+                        $this->queue->markDone($id, $result['message']);
+                        $nsJob = $this->queue->enqueueNameservers((int) $job->domain_id, $job->domain, $wanted);
+                        $result['message'] .= "; nameservers queued as job #$nsJob";
+                    } elseif ($result['nameservers']) {
                         $this->queue->markNameserversSynced((int) $job->domain_id, $result['nameservers']);
                     }
                     break;
@@ -116,6 +125,10 @@ final class JobProcessor
 
             $this->queue->markDone($id, $result['message']);
             $this->activity("PKNIC: job #$id {$job->action} {$job->domain} done - {$result['message']}", $payload);
+            return true;
+        } catch (AwaitingConfirmationException $e) {
+            $this->queue->release($id, $e->getMessage(), 30);
+            $this->debug("PKNIC: job #$id waiting: " . $e->getMessage());
             return true;
         } catch (LoginException $e) {
             $this->queue->release($id, 'Login problem: ' . $e->getMessage());

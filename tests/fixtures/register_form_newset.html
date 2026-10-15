@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html><body><a href="/logout.php">Logout</a>
+<form id="regForm" method="post" action="/register.php?step=2">
+  <input type="hidden" name="reg_token" value="reg-tok-2">
+  <textarea name="domain_name"></textarea>
+  <select name="years"><option value="1Y">1</option><option value="2Y">2</option></select>
+  <input name="reg_name"><input name="cnic">
+  <select name="country"><option value="PK" selected>Pakistan</option></select>
+  <select name="nsset">
+    <option value="">Select the Nameserver for this Domain set</option>
+    <option value="11">Default (ns1.oldhost.net, ns2.oldhost.net)</option>
+    <option value="13">whmcs-1 (ns1.brandnew.pk, ns2.brandnew.pk)</option>
+  </select>
+  <input type="checkbox" name="agree" value="1">
+</form></body></html>

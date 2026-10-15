@@ -132,6 +132,10 @@ final class Notifier
 
         switch ($job->action) {
             case 'register':
+                if (!empty($payload['submitted_at'])) {
+                    $lines[] = "0. The application WAS submitted at {$payload['submitted_at']}. Check its status in the panel "
+                        . 'before applying again.';
+                }
                 $lines[] = "1. Register {$job->domain} for $years year(s).";
                 $lines[] = '2. Nameservers: ' . ($ns ? implode(', ', $ns) : '(none given)');
                 $lines[] = '3. Registrant / admin details:';

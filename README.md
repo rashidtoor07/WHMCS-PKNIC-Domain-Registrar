@@ -27,7 +27,7 @@ tests/                               offline tests against saved HTML
 
    | Setting | Notes |
    |---|---|
-   | PKNIC Panel Base URL | e.g. `https://…` (no trailing slash). Paths in `pknic_map.php` are relative to it. |
+   | PKNIC Panel Base URL | `https://pk6.pknic.net.pk` (no trailing slash). Paths in `pknic_map.php` are relative to it. |
    | Username / Password | Your panel login. The password is a `password` field, so WHMCS stores it encrypted. |
    | Ticket Department ID | Department for failure tickets (an internal/staff-only department is best). Empty = no ticket. |
    | Admin alert email | Gets failure and pause alerts. Admins subscribed to *System* emails also get them via WHMCS. |
@@ -75,9 +75,13 @@ The domain sync (`Sync`) runs in WHMCS's normal *Domain Sync* cron task. It read
 `pending → processing → done`, or, on error, back to `pending` with a backoff of 5 → 15 → 45 … minutes (capped at 6 h).
 Once *Max retries* is reached the job becomes `failed`, and a ticket, a To-Do and an email go out with everything needed to do it by hand.
 
-- **Registration:** returns *Pending Registration* to WHMCS right away. When PKNIC confirms the domain, the module sets
-  the domain *Active* with the real expiry and next due date (`UpdateClientDomain`).
-  Before submitting, a retry checks whether the domain is already in the account, so it is never registered twice.
+- **Registration:** returns *Pending Registration* to WHMCS right away.
+  - The cron submits the PKNIC *Domain Application* once and saves `submitted_at` on the job.
+  - From then on, runs only check **My Domains** (every 30 min, up to `register_confirm_hours`, default 72 h, then a ticket).
+    They never re-submit the application.
+  - Once the domain is listed, the module sets it *Active* with the real expiry and next due date (`UpdateClientDomain`).
+  - Nameservers are picked from PKNIC's saved nameserver sets. If none matches, the module creates one
+    (when `ns_set_add_*` is filled) or registers without one and queues a nameserver job.
 - **Renewal:** the job records the current expiry before submitting and only succeeds when the expiry moves forward.
   If the result is unclear (e.g. success text shown but the expiry is unchanged), the job fails straight to a ticket instead of retrying.
   This prevents a double renewal charge.

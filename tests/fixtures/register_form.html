@@ -2,6 +2,16 @@
 <html><body><a href="/logout.php">Logout</a>
 <form id="regForm" method="post" action="/register.php?step=2">
   <input type="hidden" name="reg_token" value="reg-tok-1">
-  <input name="domain_name"><select name="years"><option value="1Y">1</option><option value="2Y">2</option></select>
-  <input name="reg_name"><input name="cnic"><input name="ns1"><input name="ns2">
+  <textarea name="domain_name"></textarea>
+  <select name="years"><option value="1Y">1</option><option value="2Y">2</option></select>
+  <input name="reg_name"><input name="cnic">
+  <select name="country"><option value="AF">Afghanistan</option><option value="PK" selected>Pakistan</option><option value="AE">United Arab Emirates</option></select>
+  <select name="techContact"><option value="self" selected>Same as the Account Holder</option></select>
+  <select name="nsset">
+    <option value="">Select the Nameserver for this Domain set</option>
+    <option value="11">Default (ns1.oldhost.net, ns2.oldhost.net)</option>
+    <option value="12">Shop (ns1.shophost.pk, ns2.shophost.pk)</option>
+  </select>
+  <input type="checkbox" name="agree" value="1">
+  <input type="submit" name="submitApp" value="Submit Domain Application">
 </form></body></html>

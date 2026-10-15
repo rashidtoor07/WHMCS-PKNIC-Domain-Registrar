@@ -106,8 +106,8 @@ final class JobQueue
         $register = Capsule::table(self::JOBS)
             ->where('domain', $domain)->where('action', 'register')->where('status', 'pending')
             ->orderBy('id', 'desc')->first();
-        if ($register !== null) {
-            $payload = json_decode((string) $register->payload, true) ?: [];
+        $payload = $register !== null ? (json_decode((string) $register->payload, true) ?: []) : [];
+        if ($register !== null && empty($payload['submitted_at'])) {
             foreach ([1, 2, 3, 4, 5] as $i) {
                 $payload['ns' . $i] = $nameservers[$i - 1] ?? '';
             }

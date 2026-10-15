@@ -5,6 +5,7 @@
  * Fill each "TODO" from Chrome DevTools - see docs/CAPTURE.md. Nothing here is a real PKNIC value.
  *
  * Paths are relative to the "PKNIC Panel Base URL" module setting (absolute URLs also work).
+ * For PKNIC set that setting to: https://pk6.pknic.net.pk
  * Placeholders usable in page paths: {domain} (example.com.pk), {sld} (example), {tld} (com.pk),
  * {id} (panel's internal domain id, looked up via domain_list_page + domain_id_regex).
  *
@@ -19,7 +20,7 @@
 
 return [
     // ---------------------------------------------------------------- login
-    'login_page'           => '/TODO',            // TODO: fill from DevTools - URL of the login form page
+    'login_page'           => '/pk5/login.PK',    // https://pk6.pknic.net.pk/pk5/login.PK
     'login_form_selector'  => 'form',             // TODO: e.g. 'form#loginForm' if the page has several forms
     'login_fields'         => [
         'username' => 'TODO_field',               // TODO: name="" of the username input
@@ -27,7 +28,7 @@ return [
     ],
     'login_extra_fields'   => [],                 // TODO (optional): e.g. ['btnLogin' => 'Login'] if the submit button's name/value is required
     'logged_in_check_page' => '/TODO',            // TODO: a page only reachable when logged in (dashboard / domain list)
-    'logged_in_marker'     => 'Logout',           // TODO: confirm - text only visible when logged in
+    'logged_in_marker'     => 'My Domains',       // menu item seen when logged in - confirm it is NOT on the login page
     'login_page_marker'    => '',                 // optional: text unique to the login page; default detects a password input
     'login_failed_text'    => ['TODO'],           // TODO: e.g. the "invalid username or password" message
 
@@ -47,28 +48,50 @@ return [
     'status_expired_text'   => ['Expired'],       // TODO: confirm
 
     // ---------------------------------------------------------------- register
-    'register_page'          => '/TODO',          // TODO: fill from DevTools
-    'register_form_selector' => 'form',           // TODO
-    // whmcs/payload key => pknic field name. Payload keys: domain, sld, tld, regperiod, ns1..ns5,
+    // "Domain Application for .pk" form (menu: Register Domain). Labels below are from that page;
+    // the name="" of each input must be read in DevTools (right-click the box > Inspect).
+    'register_page'          => '/pk5/TODO',      // TODO: URL of the "Domain Application for .pk" page
+    'register_form_selector' => 'form',           // TODO: e.g. 'form[name="..."]' if the page has more than one form
+    // payload key => pknic field. Payload keys: domain, sld, tld, regperiod, ns1..ns5, nameservers (list),
     // firstname, lastname, fullname, companyname, email, address1, address2, city, state, postcode,
     // countrycode, countryname, fullphonenumber, admin* equivalents, additionalfields.<Field Name>.
-    // A value may also be ['field' => 'name', 'default' => 'x', 'transform' => fn ($v, $data) => ...].
+    // Spec forms: 'field_name'
+    //             ['field' => 'name', 'default' => 'x', 'transform' => fn ($v, $data) => ...]
+    //             ['field' => 'name', 'select' => true, 'also' => ['other_key']]   pick a <select> option by value/text
+    //             ['field' => 'name', 'select' => 'nameservers']                    pick the nameserver set listing exactly these hosts
     'register_fields'        => [
-        'domain'    => 'TODO_field',
-        'regperiod' => 'TODO_field',
-        'ns1'       => 'TODO_field',
-        'ns2'       => 'TODO_field',
-        // 'fullname'        => 'TODO_field',
-        // 'email'           => 'TODO_field',
-        // 'address1'        => 'TODO_field',
-        // 'city'            => 'TODO_field',
-        // 'fullphonenumber' => 'TODO_field',
+        'domain'          => 'TODO_field',        // "Domain Names" (textarea; one domain per job)
+        'companyname'     => [                    // "Organization" (The Domain Owner) - falls back to the person's name
+            'field' => 'TODO_field',
+            'transform' => fn ($v, $d) => trim((string) $v) !== '' ? $v : ($d['fullname'] ?? ''),
+        ],
+        'fullname'        => 'TODO_field',        // "Contact Person"
+        'role'            => ['field' => 'TODO_field', 'default' => 'Domain Owner'], // "Role Name"
+        'address1'        => [                    // "Address"
+            'field' => 'TODO_field',
+            'transform' => fn ($v, $d) => trim($v . ' ' . ($d['address2'] ?? '')),
+        ],
+        'city'            => 'TODO_field',        // "City"
+        'countryname'     => ['field' => 'TODO_field', 'select' => true, 'also' => ['countrycode']], // "Country" dropdown
+        'state'           => 'TODO_field',        // "State/Province"
+        'postcode'        => 'TODO_field',        // "Zip/Postal Code"
+        'email'           => 'TODO_field',        // "Email Address"
+        'fullphonenumber' => 'TODO_field',        // "Phone Number" (WHMCS format +92.3001234567)
+        // "DNS Nameserver" dropdown of saved nameserver sets. If no set lists exactly the ordered
+        // nameservers, the application is sent without one and a nameserver job follows.
+        'nameservers'     => ['field' => 'TODO_field', 'select' => 'nameservers'],
+        // "Group Tag" is optional; "Technical Contact" / "Billing Contact" keep their default selection.
     ],
-    'register_static_fields'         => [],       // fixed extra fields, e.g. ['agree' => '1', 'submit' => 'Register']
-    'register_confirm_form_selector' => '',       // optional: a second "confirm" form shown after the first submit
+    'register_static_fields'         => [
+        // TODO: the "I agree to the terms..." checkbox and the submit button as they appear in Form Data, e.g.
+        // 'agree_field_name' => 'on',
+        // 'submit_button_name' => 'Submit Domain Application',
+    ],
+    'register_confirm_form_selector' => '',       // set if a confirmation page with a second button follows
     'register_confirm_static_fields' => [],
-    'register_success_text'          => ['TODO'], // TODO
+    'register_success_text'          => ['TODO'], // TODO: message shown after "Submit Domain Application"
     'register_error_text'            => [],       // TODO (optional): e.g. 'not available', 'already registered'
+    'register_confirm_hours'         => 72,       // how long to wait for the domain to appear in My Domains before escalating
 
     // ---------------------------------------------------------------- renew
     'renew_page'                  => '/TODO?domain={domain}', // TODO: fill from DevTools
@@ -86,6 +109,8 @@ return [
     // ---------------------------------------------------------------- nameservers
     'ns_update_page'                  => '/TODO?domain={domain}', // TODO: fill from DevTools
     'ns_update_form_selector'         => 'form',  // TODO
+    // If this page also uses a nameserver-set dropdown, use instead:
+    //   'ns_fields' => ['nameservers' => ['field' => 'TODO_field', 'select' => 'nameservers']],
     'ns_fields'                       => [
         'ns1' => 'TODO',
         'ns2' => 'TODO',
@@ -98,6 +123,19 @@ return [
     'ns_update_confirm_static_fields' => [],
     'ns_update_success_text'          => ['TODO'],
     'ns_update_error_text'            => [],
+
+    // ---------------------------------------------------------------- nameserver sets (optional)
+    // PKNIC picks nameservers from saved sets (the "Add" link next to the DNS Nameserver dropdown).
+    // Fill these to let the module create a missing set automatically; otherwise it opens a ticket.
+    'ns_set_add_page'          => '',             // TODO (optional): URL behind the "Add" link
+    'ns_set_add_form_selector' => 'form',
+    'ns_set_add_fields'        => [               // keys: set_name, ns1..ns5, nameservers, domain
+        // 'set_name' => 'TODO_field',
+        // 'ns1' => 'TODO_field',
+        // 'ns2' => 'TODO_field',
+    ],
+    'ns_set_add_static_fields' => [],
+    'ns_set_add_error_text'    => [],
 
     // ---------------------------------------------------------------- availability (optional)
     // Leave availability_page empty and the module does not offer CheckAvailability.
