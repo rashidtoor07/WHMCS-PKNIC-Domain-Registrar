@@ -27,25 +27,35 @@ return [
         'password' => 'TODO_field',               // TODO: name="" of the password input
     ],
     'login_extra_fields'   => [],                 // TODO (optional): e.g. ['btnLogin' => 'Login'] if the submit button's name/value is required
-    'logged_in_check_page' => '/TODO',            // TODO: a page only reachable when logged in (dashboard / domain list)
-    'logged_in_marker'     => 'My Domains',       // menu item seen when logged in - confirm it is NOT on the login page
+    'logged_in_check_page' => '/pk5/userDomains.PK', // "My Domains" - only reachable when logged in
+    // Button on the My Domains page. Pages are checked for this only when it matters (login check page / after login).
+    'logged_in_marker'     => 'Search in My Domains',
     'login_page_marker'    => '',                 // optional: text unique to the login page; default detects a password input
     'login_failed_text'    => ['TODO'],           // TODO: e.g. the "invalid username or password" message
 
-    // ---------------------------------------------------------------- domain lookup inside the account
-    // Used to confirm a registration and, if pages use an internal id, to find {id}.
-    'domain_list_page'     => '',                 // TODO (optional): e.g. '/TODO/domains?search={domain}'
-    'domain_id_regex'      => '',                 // TODO (only if a page path uses {id}): e.g. '#domain\.php\?id=(\d+)"[^>]*>\s*{domain}#i'
+    // ---------------------------------------------------------------- My Domains (userDomains.PK)
+    // Columns: [checkbox] Domain | Registrant | Created | Expiry | Nameservers. The list cuts nameservers to
+    // 20 characters, so they are read from the domain's own page (the link on its name) instead.
+    'domain_list_page'            => '/pk5/userDomains.PK',
+    // "Search in My Domains" box: needed once the list has more than one page. Fill from DevTools.
+    'domain_search_field'         => 'TODO_field',  // TODO: name="" of the search text box
+    'domain_search_form_selector' => 'form',        // TODO: confirm (the search form is the first form on the page?)
+    'domain_search_static_fields' => [],
+    'domain_id_regex'             => '',            // not needed: pages are reached via the domain's link ({link})
 
-    // ---------------------------------------------------------------- domain detail page (read back)
-    'domain_info_page'      => '/TODO?domain={domain}', // TODO: fill from DevTools
-    'domain_not_found_text' => ['TODO'],          // TODO: message shown when the domain is not in the account
-    'ns_parse_selector'     => 'TODO',            // TODO: element(s) holding the nameservers
-    'expiry_parse_selector' => 'TODO',            // TODO: element holding the expiry date
-    'date_format'           => 'TODO',            // TODO: PHP date format of that text, e.g. 'd-m-Y' or 'Y-m-d' or 'd M Y'
-    'status_parse_selector' => '',                // optional: element holding the domain status
-    'status_active_text'    => ['Active'],        // TODO: confirm
-    'status_expired_text'   => ['Expired'],       // TODO: confirm
+    // ---------------------------------------------------------------- reading a domain back
+    // 'list' = read the domain's row in My Domains (searched). {domain} in a selector is replaced by the domain.
+    'domain_info_page'      => 'list',
+    'domain_not_found_text' => [],                  // a missing row already means "not found"
+    'expiry_parse_selector' => '//tr[.//a[normalize-space(.)="{domain}"]]'
+        . '/td[count((//*[self::td or self::th][normalize-space(.)="Expiry"])[1]/preceding-sibling::*) + 1]',
+    'date_format'           => 'Y-m-d',             // e.g. 2028-03-11
+    'status_parse_selector' => '',                  // no status column: active/expired is derived from the expiry date
+    'status_active_text'    => ['Active'],
+    'status_expired_text'   => ['Expired'],
+    // Full nameservers: the domain's detail page (href of its link in My Domains).
+    'ns_info_page'          => '{link}',
+    'ns_parse_selector'     => 'TODO',              // TODO: element(s) with the nameservers on the domain detail page
 
     // ---------------------------------------------------------------- register
     // "Domain Application for .pk" form (menu: Register Domain). Labels below are from that page;

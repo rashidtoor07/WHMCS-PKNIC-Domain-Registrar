@@ -13,6 +13,9 @@ final class PknicActions
     /** @var array<string, string> */
     private array $idCache = [];
 
+    /** @var array<string, Response> Domain list responses; cleared whenever anything is submitted. */
+    private array $listCache = [];
+
     public function __construct(private readonly PknicClient $client)
     {
     }
@@ -218,17 +221,81 @@ final class PknicActions
     {
         $domain = strtolower($domain);
         $this->client->ensureLogin();
-        $resp = $this->client->get(
-            (string) $this->client->requireMap('domain_info_page'),
-            $this->vars($domain, 'domain_info_page'),
-            'domain_info'
-        );
-        return $this->parseDomainInfo($resp->body);
+        $html = $this->loadPage('domain_info_page', $domain, 'domain_info')->body;
+        $info = $this->parseDomainInfo($html, $domain);
+
+        // Nameservers may live on another page (the list truncates them).
+        if (
+            $info['found']
+            && MapLoader::isFilled($this->client->map('ns_info_page'))
+            && MapLoader::isFilled($this->client->map('ns_parse_selector'))
+        ) {
+            $nsHtml = $this->loadPage('ns_info_page', $domain, 'ns_info')->body;
+            $info['nameservers'] = self::extractHostnames(
+                $this->client->findTexts($nsHtml, $this->domainSelector('ns_parse_selector', $domain))
+            );
+        }
+        return $info;
     }
 
-    public function parseDomainInfo(string $html): array
+    /** Selector text with {domain} filled in, so one selector can target the domain's row in a list. */
+    private function domainSelector(string $key, string $domain): string
     {
-        $map = fn (string $k) => $this->client->map($k);
+        return str_replace('{domain}', strtolower($domain), (string) $this->client->map($key, ''));
+    }
+
+    /**
+     * Load a page from the map. The special value "list" means the (searched) domain list;
+     * "{link}" is the href of the domain's link in that list.
+     */
+    private function loadPage(string $key, string $domain, string $label): Response
+    {
+        $template = (string) $this->client->requireMap($key);
+        if ($template === 'list') {
+            return $this->loadDomainList($domain);
+        }
+        if (str_contains($template, '{link}')) {
+            $template = str_replace('{link}', $this->findDomainLink($domain), $template);
+        }
+        return $this->client->get($template, $this->vars($domain, $key), $label);
+    }
+
+    /** The account's domain list, narrowed with "Search in My Domains" when that form is mapped. */
+    public function loadDomainList(string $domain): Response
+    {
+        if (isset($this->listCache[$domain])) {
+            return $this->listCache[$domain];
+        }
+        $page = (string) $this->client->requireMap('domain_list_page');
+        $field = $this->client->map('domain_search_field');
+        if (MapLoader::isFilled($field)) {
+            $resp = $this->client->submitForm(
+                $page,
+                (string) ($this->client->map('domain_search_form_selector') ?: 'form'),
+                [(string) $field => $domain] + (array) $this->client->map('domain_search_static_fields', []),
+                $this->vars($domain),
+                'domain_search'
+            );
+        } else {
+            $resp = $this->client->get($page, $this->vars($domain), 'domain_list');
+        }
+        return $this->listCache[$domain] = $resp;
+    }
+
+    public function findDomainLink(string $domain): string
+    {
+        $resp = $this->loadDomainList($domain);
+        $lower = 'translate(normalize-space(.), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")';
+        $hrefs = Selector::texts($resp->body, "//a[$lower=" . Selector::literal(strtolower($domain)) . ']/@href');
+        if ($hrefs === [] || $hrefs[0] === '') {
+            throw new PknicException("No link for $domain found in the PKNIC domain list");
+        }
+        return PknicClient::resolveUrl($resp->url, $hrefs[0]);
+    }
+
+    public function parseDomainInfo(string $html, string $domain = ''): array
+    {
+        $map = fn (string $k) => $this->domainSelector($k, $domain);
         $notFound = PknicClient::matchAny(
             PknicClient::visibleText($html),
             MapLoader::textList($this->client->mapAll(), 'domain_not_found_text')
@@ -243,7 +310,7 @@ final class PknicActions
         if (MapLoader::isFilled($map('expiry_parse_selector'))) {
             $expiryRaw = $this->client->findTexts($html, (string) $map('expiry_parse_selector'))[0] ?? null;
             if ($expiryRaw !== null) {
-                $expiry = self::parseDate($expiryRaw, (string) ($map('date_format') ?? ''));
+                $expiry = self::parseDate($expiryRaw, (string) $this->client->map('date_format', ''));
             }
         }
 
@@ -290,10 +357,8 @@ final class PknicActions
 
     public function isInAccount(string $domain): bool
     {
-        $list = $this->client->map('domain_list_page');
-        if (MapLoader::isFilled($list)) {
-            $resp = $this->client->get((string) $list, $this->vars($domain), 'domain_list');
-            return self::containsDomain($resp->body, $domain);
+        if (MapLoader::isFilled($this->client->map('domain_list_page'))) {
+            return self::containsDomain($this->loadDomainList($domain)->body, $domain);
         }
         return $this->getDomainInfo($domain)['found'];
     }
@@ -304,7 +369,7 @@ final class PknicActions
             return $this->idCache[$domain];
         }
         $regex = (string) $this->client->requireMap('domain_id_regex');
-        $resp = $this->client->get((string) $this->client->requireMap('domain_list_page'), $this->vars($domain), 'domain_list');
+        $resp = $this->loadDomainList($domain);
         $pattern = str_replace('{domain}', preg_quote($domain), $regex);
         $ok = @preg_match($pattern, $resp->body, $m);
         if ($ok === false) {
@@ -346,6 +411,7 @@ final class PknicActions
         foreach ([1, 2, 3, 4, 5] as $i) {
             $data['ns' . $i] = $nameservers[$i - 1] ?? '';
         }
+        $this->listCache = [];
         $resp = $this->client->submitForm(
             (string) $this->client->requireMap('ns_set_add_page'),
             (string) ($this->client->map('ns_set_add_form_selector') ?: 'form'),
@@ -359,8 +425,13 @@ final class PknicActions
     private function submitAction(string $action, string $domain, array $fields): Response
     {
         $pageKey = $action . '_page';
+        $page = (string) $this->client->requireMap($pageKey);
+        if (str_contains($page, '{link}')) {
+            $page = str_replace('{link}', $this->findDomainLink($domain), $page);
+        }
+        $this->listCache = [];
         $resp = $this->client->submitForm(
-            (string) $this->client->requireMap($pageKey),
+            $page,
             (string) ($this->client->map($action . '_form_selector') ?: 'form'),
             $fields,
             $this->vars($domain, $pageKey),
@@ -385,6 +456,7 @@ final class PknicActions
             );
         }
         $this->assertNoError($resp, $action);
+        $this->listCache = [];
         return $resp;
     }
 

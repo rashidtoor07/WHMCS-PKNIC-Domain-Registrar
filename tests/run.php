@@ -356,6 +356,37 @@ test('registerDomain: no confirmation page => error quotes the PKNIC page text',
     throws(PknicException::class, fn () => (new PknicActions(client($t)))->registerDomain(shopPayload()), 'name is reserved');
 });
 
+test('PKNIC-style My Domains list: expiry from the row, nameservers via the domain link, search form', function () {
+    $t = new FixtureTransport([
+        'GET /pk5/userDomains.PK' => 'pk_userDomains.html',
+        'GET /pk5/domainDetails.PK' => 'pk_domainDetails.html',
+    ]);
+    $c = client($t, [
+        'logged_in_check_page' => '/pk5/userDomains.PK',
+        'logged_in_marker' => 'Search in My Domains',
+        'domain_list_page' => '/pk5/userDomains.PK',
+        'domain_search_field' => 'q',
+        'domain_search_form_selector' => 'form[name="search"]',
+        'domain_info_page' => 'list',
+        'expiry_parse_selector' => '//tr[.//a[normalize-space(.)="{domain}"]]/td[count((//*[self::td or self::th][normalize-space(.)="Expiry"])[1]/preceding-sibling::*) + 1]',
+        'date_format' => 'Y-m-d',
+        'status_parse_selector' => '',
+        'ns_info_page' => '{link}',
+        'ns_parse_selector' => 'th:contains("Name Servers") + td',
+    ]);
+    $a = new PknicActions($c);
+    $info = $a->getDomainInfo('computronix.pk');
+    same('2028-07-30', $info['expiry'], 'expiry from the domain row, column found by header');
+    same(['ns1.visioningcloud.com', 'ns2.visioningcloud.com'], $info['nameservers'], 'full nameservers from the detail page, not the truncated list');
+    same('active', $info['status'], 'status derived from expiry');
+    $urls = array_column($t->requests, 'url');
+    check(in_array('https://panel.test/pk5/userDomains.PK?q=computronix.pk', $urls, true), 'list loaded through the search form');
+    check(in_array('https://panel.test/pk5/domainDetails.PK?d=computronix.pk', $urls, true), 'followed the domain link');
+    same('2028-03-07', $a->getDomainInfo('safex.com.pk')['expiry'], 'second-level .com.pk row');
+    same(false, $a->getDomainInfo('notmine.pk')['found'], 'missing row => not found');
+    check($a->isInAccount('aliwaleed.pk') && !$a->isInAccount('waleed.pk'), 'isInAccount on the list');
+});
+
 test('OptionChoice matching', function () {
     $opts = ['' => 'Select', '5' => 'Set A (ns1.a.pk ns2.a.pk ns3.a.pk)', '6' => 'Set B (ns1.a.pk, ns2.a.pk)'];
     same('6', (new OptionChoice(['ns2.a.pk', 'ns1.a.pk'], 'nameservers'))->resolve($opts), 'exact set, not superset');
@@ -426,7 +457,7 @@ test('Shipped pknic_map.php: unfilled values raise MapException, availability of
     check(!MapLoader::isFilled($map['register_fields']), 'register_fields detected as TODO');
     $config = new Config('https://panel.test', 'u', 'p', 0, '', 3, false, sys_get_temp_dir());
     $c = new PknicClient($config, $map, panel(), fn () => null);
-    throws(MapException::class, fn () => $c->ensureLogin(), 'logged_in_check_page');
+    throws(MapException::class, fn () => $c->ensureLogin(), 'login_fields');
     throws(MapException::class, fn () => (new PknicActions($c))->registerDomain(['domain' => 'abcd.pk']), 'register_fields');
 });
 

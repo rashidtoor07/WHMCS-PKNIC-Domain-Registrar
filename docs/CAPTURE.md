@@ -27,6 +27,11 @@ for each action. Every value still containing `TODO` is treated as missing: the 
     The job waits and retries hourly without using up retries, and you get one alert every 6 hours until you top up.
 - It is an *application*. After submitting, the module waits (up to `register_confirm_hours`) for the domain to show in
   **My Domains**, and **never submits the same application twice**.
+- **My Domains** (`/pk5/userDomains.PK`) is the list used to confirm registrations and read expiry dates.
+  - Expiry is read from the domain's row (`Y-m-d`).
+  - The list cuts nameservers to 20 characters, so nameservers are read from the page the domain's name links to
+    (`ns_info_page => '{link}'`). Open one domain and Inspect the element listing its nameservers to get `ns_parse_selector`.
+  - Map the **Search in My Domains** box (`domain_search_field`) so lookups still work once the list has more than one page.
 - Still needed from DevTools: the domain detail page in My Domains, the
   nameserver-change page, the renewal page, and the success/error messages of each.
 
