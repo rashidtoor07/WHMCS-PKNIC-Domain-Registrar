@@ -50,7 +50,7 @@ return [
     // ---------------------------------------------------------------- register
     // "Domain Application for .pk" form (menu: Register Domain). Labels below are from that page;
     // the name="" of each input must be read in DevTools (right-click the box > Inspect).
-    'register_page'          => '/pk5/TODO',      // TODO: URL of the "Domain Application for .pk" page
+    'register_page'          => '/pk5/register.PK', // "Domain Application for .pk"
     'register_form_selector' => 'form',           // TODO: e.g. 'form[name="..."]' if the page has more than one form
     // payload key => pknic field. Payload keys: domain, sld, tld, regperiod, ns1..ns5, nameservers (list),
     // firstname, lastname, fullname, companyname, email, address1, address2, city, state, postcode,
@@ -87,9 +87,12 @@ return [
         // 'agree_field_name' => 'on',
         // 'submit_button_name' => 'Submit Domain Application',
     ],
-    'register_confirm_form_selector' => '',       // set if a confirmation page with a second button follows
-    'register_confirm_static_fields' => [],
-    'register_success_text'          => ['TODO'], // TODO: message shown after "Submit Domain Application"
+    // After "Submit Domain Application" PKNIC shows a confirmation page; registration happens on its Confirm button.
+    'register_confirm_form_selector' => 'form',   // TODO: confirm, e.g. 'form[name="..."]' if that page has several forms
+    'register_confirm_static_fields' => [
+        // TODO: the Confirm button as it appears in Form Data, e.g. 'confirm_button_name' => 'Confirm',
+    ],
+    'register_success_text'          => ['TODO'], // TODO: message shown after clicking Confirm
     'register_error_text'            => [],       // TODO (optional): e.g. 'not available', 'already registered'
     'register_confirm_hours'         => 72,       // how long to wait for the domain to appear in My Domains before escalating
 
@@ -149,7 +152,10 @@ return [
     // ---------------------------------------------------------------- shared texts
     'success_text'           => ['TODO'],         // fallback when an action has no own *_success_text
     'error_text'             => ['TODO'],         // known error messages, checked after every action
-    'error_message_selector' => '',               // optional: element holding the error message, e.g. '.alert-danger'
+    'error_message_selector' => '',
+    // Text PKNIC shows when the account balance is too low (on the confirmation page or after Confirm).
+    // Jobs then wait and retry hourly without using up retries; the admin gets one alert every 6 hours.
+    'insufficient_balance_text' => ['TODO'],      // TODO: e.g. 'insufficient balance'               // optional: element holding the error message, e.g. '.alert-danger'
 
     'allowed_tlds' => ['pk', 'com.pk', 'net.pk', 'org.pk', 'biz.pk', 'web.pk', 'fam.pk'],
 ];

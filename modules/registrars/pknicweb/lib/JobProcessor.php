@@ -6,8 +6,14 @@ namespace PknicWeb;
 
 final class JobProcessor
 {
+    private const PAID_ACTIONS = ['register', 'renew'];
+    private const BALANCE_RETRY_MINUTES = 60;
+    private const BALANCE_ALERT_HOURS = 6;
+
     /** @var \Closure(): PknicActions */
     private \Closure $actionsFactory;
+
+    private bool $balanceLow = false;
 
     public function __construct(
         private readonly Config $config,
@@ -79,6 +85,11 @@ final class JobProcessor
         $payload = json_decode((string) $job->payload, true) ?: [];
         $this->debug("PKNIC: processing job #$id {$job->action} {$job->domain} (attempt " . ((int) $job->attempts + 1) . ')');
 
+        if ($this->balanceLow && in_array($job->action, self::PAID_ACTIONS, true)) {
+            $this->queue->release($id, 'Waiting for PKNIC account balance to be topped up', self::BALANCE_RETRY_MINUTES);
+            return true;
+        }
+
         try {
             switch ($job->action) {
                 case 'register':
@@ -130,6 +141,12 @@ final class JobProcessor
             $this->queue->release($id, $e->getMessage(), 30);
             $this->debug("PKNIC: job #$id waiting: " . $e->getMessage());
             return true;
+        } catch (InsufficientBalanceException $e) {
+            // Nothing was registered/renewed; wait for a top-up instead of spending retries.
+            $this->balanceLow = true;
+            $this->queue->release($id, $e->getMessage() . ' - will retry after a top-up', self::BALANCE_RETRY_MINUTES);
+            $this->alertLowBalance($e->getMessage());
+            return true;
         } catch (LoginException $e) {
             $this->queue->release($id, 'Login problem: ' . $e->getMessage());
             $this->settings->recordLoginFailure($e->getMessage(), $this->notifier);
@@ -176,6 +193,20 @@ final class JobProcessor
             $this->notifier->alertAdmin('PKNIC automation paused', $reason
                 . "\n\nFix the problem, then click \"Resume processing\" in Addons > PKNIC Jobs.");
         }
+    }
+
+    private function alertLowBalance(string $message): void
+    {
+        $last = (int) strtotime((string) $this->settings->get('balance_alert_at', ''));
+        if ($last > time() - self::BALANCE_ALERT_HOURS * 3600) {
+            return;
+        }
+        $this->settings->set('balance_alert_at', date('Y-m-d H:i:s'));
+        $this->notifier->alertAdmin(
+            'PKNIC account balance too low',
+            $message . "\n\nRegistrations and renewals are waiting and will be retried every "
+            . self::BALANCE_RETRY_MINUTES . ' minutes without using up their retries. Top up the PKNIC account balance.'
+        );
     }
 
     private function updateWhmcsDomain(object $job, ?string $expiry, bool $activate): string

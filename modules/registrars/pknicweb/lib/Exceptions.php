@@ -34,6 +34,11 @@ class AwaitingConfirmationException extends PknicException
 {
 }
 
+/** PKNIC refused because the account balance is too low. Affects every paid action, not just this job. */
+class InsufficientBalanceException extends PknicException
+{
+}
+
 /** A <select> had no option matching the wanted value. Raised before anything is posted. */
 class NoMatchingOptionException extends PknicException
 {

@@ -19,9 +19,15 @@ for each action. Every value still containing `TODO` is treated as missing: the 
   - Capture what the dropdown options look like (Inspect the `<select>`). If an option's text shows only a name and
     not the hostnames, tell the developer: matching then needs another approach.
 - **Country** is matched by option text (e.g. "Pakistan") or value (e.g. "PK"), whichever the panel uses.
+- `register_page` is `/pk5/register.PK`. After **Submit Domain Application**, PKNIC shows a confirmation page, and
+  the domain is only registered when **Confirm** is clicked (and the account has balance).
+  - The module submits the form, then clicks Confirm (`register_confirm_*`). Capture the Confirm POST too: its button
+    name/value goes into `register_confirm_static_fields`.
+  - Copy PKNIC's low-balance message into `insufficient_balance_text`. When it appears, Confirm is **not** clicked.
+    The job waits and retries hourly without using up retries, and you get one alert every 6 hours until you top up.
 - It is an *application*. After submitting, the module waits (up to `register_confirm_hours`) for the domain to show in
   **My Domains**, and **never submits the same application twice**.
-- Still needed from DevTools: the URL of the application page, the domain detail page in My Domains, the
+- Still needed from DevTools: the domain detail page in My Domains, the
   nameserver-change page, the renewal page, and the success/error messages of each.
 
 ## 1. Record one action in Chrome DevTools

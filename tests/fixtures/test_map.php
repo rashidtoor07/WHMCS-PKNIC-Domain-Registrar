@@ -56,6 +56,7 @@ return [
     'availability_taken_text' => ['is not available'],
 
     'success_text' => ['Success'],
-    'error_text' => ['Domain is locked', 'Insufficient balance'],
+    'error_text' => ['Domain is locked'],
+    'insufficient_balance_text' => ['Insufficient balance'],
     'error_message_selector' => '.alert-danger',
 ];

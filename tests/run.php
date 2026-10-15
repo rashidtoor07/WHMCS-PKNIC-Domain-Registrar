@@ -12,6 +12,7 @@ require __DIR__ . '/FixtureTransport.php';
 
 use PknicWeb\AwaitingConfirmationException;
 use PknicWeb\Config;
+use PknicWeb\InsufficientBalanceException;
 use PknicWeb\LoginException;
 use PknicWeb\MapException;
 use PknicWeb\MapLoader;
@@ -339,6 +340,22 @@ test('registerDomain: accepted but not yet listed => AwaitingConfirmation, retry
     same(0, count($t2->posts()), 'no POST on confirmation');
 });
 
+test('registerDomain: low balance on the confirmation page => InsufficientBalance, Confirm never clicked', function () {
+    $t = registerPanel(['POST /register.php' => 'register_confirm_nobalance.html', 'GET /domains.php' => 'domains.html']);
+    $saved = null;
+    $checkpoint = function (array $p) use (&$saved) {
+        $saved = $p;
+    };
+    throws(InsufficientBalanceException::class, fn () => (new PknicActions(client($t)))->registerDomain(shopPayload(), $checkpoint), 'balance');
+    same(1, count($t->posts()), 'only the application form was posted');
+    same(null, $saved, 'not checkpointed as submitted, so it is re-applied after a top-up');
+});
+
+test('registerDomain: no confirmation page => error quotes the PKNIC page text', function () {
+    $t = registerPanel(['POST /register.php' => 'register_rejected.html', 'GET /domains.php' => 'domains.html']);
+    throws(PknicException::class, fn () => (new PknicActions(client($t)))->registerDomain(shopPayload()), 'name is reserved');
+});
+
 test('OptionChoice matching', function () {
     $opts = ['' => 'Select', '5' => 'Set A (ns1.a.pk ns2.a.pk ns3.a.pk)', '6' => 'Set B (ns1.a.pk, ns2.a.pk)'];
     same('6', (new OptionChoice(['ns2.a.pk', 'ns1.a.pk'], 'nameservers'))->resolve($opts), 'exact set, not superset');
@@ -410,7 +427,7 @@ test('Shipped pknic_map.php: unfilled values raise MapException, availability of
     $config = new Config('https://panel.test', 'u', 'p', 0, '', 3, false, sys_get_temp_dir());
     $c = new PknicClient($config, $map, panel(), fn () => null);
     throws(MapException::class, fn () => $c->ensureLogin(), 'logged_in_check_page');
-    throws(MapException::class, fn () => (new PknicActions($c))->registerDomain(['domain' => 'abcd.pk']), 'register_page');
+    throws(MapException::class, fn () => (new PknicActions($c))->registerDomain(['domain' => 'abcd.pk']), 'register_fields');
 });
 
 test('Date parsing', function () {

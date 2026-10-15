@@ -370,6 +370,13 @@ final class PknicActions
         $confirm = $this->client->map($action . '_confirm_form_selector');
         if (MapLoader::isFilled($confirm)) {
             $this->assertNoError($resp, $action);
+            if ($this->client->extractForm($resp->body, $resp->url, (string) $confirm) === null) {
+                throw new PknicException(sprintf(
+                    'Expected the confirmation page after submitting the %s form, but got: %s',
+                    $action,
+                    mb_substr(PknicClient::visibleText($resp->body), 0, 400)
+                ));
+            }
             $resp = $this->client->submitLoadedForm(
                 $resp,
                 (string) $confirm,
@@ -386,8 +393,13 @@ final class PknicActions
         if ($resp->status >= 400) {
             throw new PknicException("PKNIC returned HTTP {$resp->status} for $action ({$resp->url})");
         }
+        $text = PknicClient::visibleText($resp->body);
+        $balance = PknicClient::matchAny($text, MapLoader::textList($this->client->mapAll(), 'insufficient_balance_text'));
+        if ($balance !== null) {
+            throw new InsufficientBalanceException("PKNIC account balance too low for the $action (\"$balance\")");
+        }
         $needles = MapLoader::textList($this->client->mapAll(), $action . '_error_text', 'error_text');
-        $hit = PknicClient::matchAny(PknicClient::visibleText($resp->body), $needles);
+        $hit = PknicClient::matchAny($text, $needles);
         if ($hit === null) {
             return;
         }
